@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.britocosta.algafood.domain.exception.EntidadeEmUsoException;
@@ -25,19 +26,17 @@ import com.fasterxml.jackson.databind.exc.PropertyBindingException;
 @ControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
-	// 1. MethodArgumentTypeMismatchException é um subtipo de TypeMismatchException
+	@Override
+	protected ResponseEntity<Object> handleNoHandlerFoundException(NoHandlerFoundException ex, HttpHeaders headers,
+			HttpStatus status, WebRequest request) {
 
-	// 2. ResponseEntityExceptionHandler já trata TypeMismatchException de forma
-	// mais abrangente
+		ProblemType problemType = ProblemType.RECURSO_NAO_ENCONTRADO;
+		String detail = String.format("O recurso %s, que você tentou acessar, é inexistente.", ex.getRequestURL());
 
-	// 3. Então, especializamos o método handleTypeMismatch e verificamos se a
-	// exception
-	// é uma instância de MethodArgumentTypeMismatchException
+		Problem problem = createProblemBuilder(status, problemType, detail).build();
 
-	// 4. Se for, chamamos um método especialista em tratar esse tipo de exception
-
-	// 5. Poderíamos fazer tudo dentro de handleTypeMismatch, mas preferi separar em
-	// outro método
+		return handleExceptionInternal(ex, problem, headers, status, request);
+	}
 
 	@Override
 	protected ResponseEntity<Object> handleTypeMismatch(TypeMismatchException ex, HttpHeaders headers,
@@ -120,7 +119,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 	public ResponseEntity<?> handleEntidadeNaoEncontrada(EntidadeNaoEncontradaException ex, WebRequest request) {
 
 		HttpStatus status = HttpStatus.NOT_FOUND;
-		ProblemType problemType = ProblemType.ENTIDADE_NAO_ENCONTRADA;
+		ProblemType problemType = ProblemType.RECURSO_NAO_ENCONTRADO;
 		String detail = ex.getMessage();
 
 		Problem problem = createProblemBuilder(status, problemType, detail).build();
@@ -173,5 +172,25 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
 	private String joinPath(List<Reference> references) {
 		return references.stream().map(ref -> ref.getFieldName()).collect(Collectors.joining("."));
+	}
+
+	@ExceptionHandler(Exception.class)
+	public ResponseEntity<Object> handleUncaught(Exception ex, WebRequest request) {
+		HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
+		ProblemType problemType = ProblemType.ERRO_DE_SISTEMA;
+		String detail = "Ocorreu um erro interno inesperado no sistema. "
+				+ "Tente novamente e se o problema persistir, entre em contato " + "com o administrador do sistema.";
+
+		// Importante colocar o printStackTrace (pelo menos por enquanto, que não
+		// estamos
+		// fazendo logging) para mostrar a stacktrace no console
+		// Se não fizer isso, você não vai ver a stacktrace de exceptions que seriam
+		// importantes
+		// para você durante, especialmente na fase de desenvolvimento
+		ex.printStackTrace();
+
+		Problem problem = createProblemBuilder(status, problemType, detail).build();
+
+		return handleExceptionInternal(ex, problem, new HttpHeaders(), status, request);
 	}
 }
